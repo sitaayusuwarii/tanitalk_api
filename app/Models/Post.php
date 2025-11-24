@@ -16,7 +16,21 @@ class Post extends Model
         'category',
     ];
 
-    public function user() {
+    // Relasi ke tabel users
+    public function user()
+    {
         return $this->belongsTo(User::class);
+    }
+
+    // Relasi ke tabel likes
+    public function likes()
+    {
+        return $this->hasMany(Like::class);
+    }
+
+    // Relasi ke tabel comments
+    public function comments()
+    {
+        return $this->hasMany(Comment::class);
     }
 }
