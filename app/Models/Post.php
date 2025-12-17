@@ -13,7 +13,7 @@ class Post extends Model
         'user_id',
         'image_url',
         'description',
-        'category',
+        'category_id',
     ];
 
     // Relasi ke tabel users
@@ -33,4 +33,13 @@ class Post extends Model
     {
         return $this->hasMany(Comment::class);
     }
+
+
+
+public function category()
+{
+    return $this->belongsTo(Category::class, 'category_id');
+}
+
+
 }

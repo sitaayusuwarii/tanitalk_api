@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use App\Models\User;
 
 class UserController extends Controller
 {
@@ -40,4 +41,55 @@ class UserController extends Controller
             'user' => $user
         ]);
     }
+
+   public function show($id)
+{
+    $authId = auth()->id();
+    $user = User::find($id);
+
+    if (!$user) {
+        return response()->json([
+            'success' => false,
+            'message' => 'User not found'
+        ], 404);
+    }
+
+    // CEK apakah user login sudah follow user ini
+    $isFollowing = \DB::table('follows')
+        ->where('follower_id', $authId)
+        ->where('followed_id', $id)
+        ->exists();
+
+    return response()->json([
+        'success' => true,
+        'user' => $user,
+        'is_following' => $isFollowing,
+        'followers_count' => $user->followers()->count(),
+        'following_count' => $user->following()->count(),
+    ]);
+}
+
+public function search(Request $request)
+{
+    $query = $request->query('q');
+
+    if (!$query) {
+        return response()->json([
+            'data' => []
+        ], 200);
+    }
+
+    $users = User::where('name', 'LIKE', "%{$query}%")
+        ->select('id', 'name', 'avatar_url', 'bio')
+        ->get();
+
+    return response()->json([
+        'success' => true,
+        'data' => $users
+    ]);
+}
+
+
+
+
 }

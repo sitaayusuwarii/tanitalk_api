@@ -10,101 +10,210 @@ use Illuminate\Support\Facades\Auth;
 class PostController extends Controller
 {
     // 📦 Ambil semua post
- public function index(Request $request)
+   // 📦 Ambil semua post (dengan filter kategori opsional)
+public function index(Request $request)
 {
-    $userId = Auth::id(); // ambil user yang sedang login
+    $currentUser = Auth::user();
 
-    $query = Post::with(['user', 'likes'])
-                 ->withCount(['likes', 'comments'])
-                 ->latest();
+    $categoryId = $request->query('category_id'); // Ambil category_id dari query
 
-    $posts = $query->get()->map(function($p) use ($userId) {
+    $query = Post::with(['user', 'likes', 'category'])
+        ->withCount(['likes', 'comments'])
+        ->latest();
+
+    // Filter jika category_id ada dan bukan 0 (0 = Semua)
+    if ($categoryId && $categoryId != 0) {
+        $query->where('category_id', $categoryId);
+    }
+
+    $posts = $query->get()->map(function ($p) use ($currentUser) {
+
         return [
             'id' => $p->id,
-            'user' => $p->user->name,
-            'image_url' => $p->image_url 
-                ? (str_starts_with($p->image_url, 'http') 
-                    ? $p->image_url 
+
+            'user' => [
+                'id' => $p->user->id,
+                'name' => $p->user->name,
+                'avatar_url' => $p->user->avatar_url,
+                'is_following' => $currentUser 
+                    && $currentUser->id !== $p->user->id
+                    ? $currentUser->following()->where('followed_id', $p->user->id)->exists()
+                    : false,
+            ],
+
+            'image_url' => $p->image_url
+                ? (str_starts_with($p->image_url, 'http')
+                    ? $p->image_url
                     : asset('storage/' . $p->image_url))
                 : null,
+
             'description' => $p->description,
-            'category' => $p->category,
-            'liked_by_user' => $p->likes->where('user_id', $userId)->isNotEmpty(),
+
+            'category' => $p->category ? [
+                'id' => $p->category->id,
+                'category' => $p->category->category,
+            ] : null,
+
+            'liked_by_user' => $currentUser
+                ? $p->likes->where('user_id', $currentUser->id)->isNotEmpty()
+                : false,
+
             'likes_count' => $p->likes_count,
             'comments_count' => $p->comments_count,
             'created_at' => $p->created_at->toDateTimeString(),
         ];
     });
 
-    return response()->json($posts);
+    return response()->json([
+        'success' => true,
+        'data' => $posts
+    ]);
 }
-
-
-
 
 
     // 📝 Buat post baru
     public function store(Request $request)
     {
         $request->validate([
-            'image' => 'nullable|image|max:2048',
-            'description' => 'nullable|string',
-            'category' => 'nullable|string',
+            'image'        => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'description'  => 'nullable|string|max:255',
+            'category_id'  => 'required|exists:categories,id',
         ]);
 
         $imageUrl = null;
 
-        // Simpan gambar jika ada
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('posts', 'public');
-            $imageUrl = asset("storage/$path");
+            $imageUrl = $path;
         }
 
         $post = Post::create([
-            'user_id' => Auth::id(),
-            'image_url' => $imageUrl,
+            'user_id'     => Auth::id(),
+            'image_url'   => $imageUrl,
             'description' => $request->description,
-            'category' => $request->category,
+            'category_id' => $request->category_id,
         ]);
 
-        // kembalikan respons JSON
-       return response()->json([
+        return response()->json([
             'id' => $post->id,
-            'user' => $post->user->name ?? Auth::user()->name,
-            'image_url' => $post->image_url,
+
+            'user' => [
+                'id' => $post->user->id,
+                'name' => $post->user->name,
+                'avatar_url' => $post->user->avatar_url,
+                'is_following' => false,
+            ],
+
+            'image_url' => $post->image_url
+                ? asset('storage/' . $post->image_url)
+                : null,
+
             'description' => $post->description,
-            'category' => $post->category,
+
+            // 🔥 FIX CATEGORY FIELD NAME
+            'category' => [
+                'id' => $post->category->id,
+                'category' => $post->category->category,
+            ],
+
             'likes_count' => 0,
             'comments_count' => 0,
-            'liked_by_user' => false, // default baru dibuat user pasti belum like
+            'liked_by_user' => false,
             'created_at' => $post->created_at->toDateTimeString(),
         ], 201);
     }
 
+    // 📌 Ambil post milik user sendiri
     public function myPosts(Request $request)
-{
-    // Ambil user yang sedang login
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    // Ambil semua postingan milik user tersebut
-    $posts = $user->posts()->with(['likes', 'comments'])->latest()->get();
+        $posts = $user->posts()
+            ->with(['likes', 'comments'])
+            ->latest()
+            ->get();
 
-    // Kirim response dalam bentuk JSON
-    return response()->json([
-        'success' => true,
-        'posts' => $posts
-    ]);
-}
-
-public function destroy($id)
-{
-    $post = Post::find($id);
-    if (!$post) {
-        return response()->json(['message' => 'Post tidak ditemukan'], 404);
+        return response()->json([
+            'success' => true,
+            'posts' => $posts
+        ]);
     }
 
-    $post->delete();
-    return response()->json(['message' => 'Post berhasil dihapus'], 200);
+    // ❌ Hapus post
+    public function destroy($id)
+    {
+        $post = Post::find($id);
+
+        if (!$post) {
+            return response()->json(['message' => 'Post tidak ditemukan'], 404);
+        }
+
+        $post->delete();
+        return response()->json(['message' => 'Post berhasil dihapus'], 200);
+    }
+
+    // 📌 Ambil post milik user lain
+    public function userPosts($id)
+    {
+        $posts = Post::where('user_id', $id)
+            ->with('user')
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'posts' => $posts
+        ]);
+    }
+
+    // 🫂 Post dari user yang di-follow
+   public function followingPosts(Request $request)
+{
+    $currentUser = $request->user();
+
+    $followingIds = $currentUser->following()->pluck('followed_id');
+
+    $posts = Post::whereIn('user_id', $followingIds)
+        ->with(['user', 'likes', 'category'])
+        ->withCount(['likes', 'comments'])
+        ->latest()
+        ->get()
+        ->map(function ($p) use ($currentUser) {
+
+            return [
+                'id' => $p->id,
+
+                'user' => [
+                    'id' => $p->user->id,
+                    'name' => $p->user->name,
+                    'avatar_url' => $p->user->avatar_url,
+                    'is_following' => true, // karena ini tab koneksi
+                ],
+
+                'image_url' => $p->image_url
+                    ? (str_starts_with($p->image_url, 'http')
+                        ? $p->image_url
+                        : asset('storage/' . $p->image_url))
+                    : null,
+
+                'description' => $p->description,
+
+                'category' => $p->category ? [
+                    'id' => $p->category->id,
+                    'category' => $p->category->category,
+                ] : null,
+
+                'liked_by_user' => $p->likes->where('user_id', $currentUser->id)->isNotEmpty(),
+                'likes_count' => $p->likes_count,
+                'comments_count' => $p->comments_count,
+                'created_at' => $p->created_at->toDateTimeString(),
+            ];
+        });
+
+    return response()->json([
+        'success' => true,
+        'data' => $posts
+    ]);
 }
 
 
