@@ -13,23 +13,31 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $users = [
-            [
-                'name' => 'admin',
-                'email' => 'admin@gmail.com',
-                'password' => Hash::make('admin123'),
-                'role' => 'admin'
-            ],
-            [
-                'name' => 'petani',
-                'email' => 'petani@gmail.com',
-                'password' => Hash::make('petani123'),
-                'role' => 'petani'
-            ],
-        ];
+        // 1. Buat Akun Super Admin (Hanya 1)
+        User::create([
+            'name' => 'Super Admin',
+            'email' => 'super_admin@gmail.com',
+            'phone' => '081234567890', 
+            'password' => Hash::make('password123'),
+            'role' => 'super_admin',
+        ]);
 
-        foreach ($users as $user) {
-            User::create($user);
-        }
+        // 2. Buat Akun Admin Biasa
+        User::create([
+            'name' => 'Admin Staff',
+            'email' => 'admin@gmail.com',
+            'phone' => '08987654321',
+            'password' => Hash::make('admin123'),
+            'role' => 'admin',
+        ]);
+
+        // 3. Buat Akun Petani (Contoh)
+        User::create([
+            'name' => 'Petani',
+            'email' => 'petani@gmail.com',
+            'phone' => '08111222333',
+            'password' => Hash::make('petani123'),
+            'role' => 'petani',
+        ]);
     }
 }
